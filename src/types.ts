@@ -23,7 +23,7 @@ export interface ViewConfig {
   layout: 'grid' | 'list';
 }
 
-export type AppView = 'auth' | 'recovery' | 'reset-password' | 'dashboard' | 'cameras' | 'search' | 'violations' | 'analytics' | 'settings';
+export type AppView = 'auth' | 'recovery' | 'reset-password' | 'dashboard' | 'cameras' | 'search' | 'violations' | 'analytics' | 'settings' | 'admin-dashboard' | 'admin-users' | 'admin-settings';
 
 export interface CameraFeed {
   id: string;
