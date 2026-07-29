@@ -22,18 +22,25 @@ export function AuthScreens({ onAuthenticated }: AuthScreensProps) {
   const [regFullName, setRegFullName] = useState('');
 
   // Email verification state
-  const [verifyToken, setVerifyToken] = useState('');
+  const [verifyOtp, setVerifyOtp] = useState('');
   const [verifyEmail, setVerifyEmail] = useState('');
 
   // Change password state
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
 
+  // Forgot password & OTP state
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotOtp, setForgotOtp] = useState('');
+  const [forgotNewPassword, setForgotNewPassword] = useState('');
+  const [otpSent, setOtpSent] = useState(false);
+
   // Password Visibility Toggle States
   const [showPassword, setShowPassword] = useState(false);
   const [showRegPassword, setShowRegPassword] = useState(false);
   const [showCurrentPassword, setShowCurrentPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showForgotNewPassword, setShowForgotNewPassword] = useState(false);
 
   // Status & Feedback
   const [error, setError] = useState<string | null>(null);
@@ -41,14 +48,18 @@ export function AuthScreens({ onAuthenticated }: AuthScreensProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [isOfflineMode, setIsOfflineMode] = useState(false);
 
-  // Check URL query parameters for token (e.g. /verify-email?token=...)
+  // Check URL query parameters for otp/token/email (e.g. /verify-email?otp=123456&email=admin@example.com)
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const urlParams = new URLSearchParams(window.location.search);
-      const token = urlParams.get('token');
-      if (token) {
-        setVerifyToken(token);
+      const otpParam = urlParams.get('otp') || urlParams.get('token');
+      const emailParam = urlParams.get('email');
+      if (otpParam) {
+        setVerifyOtp(otpParam);
+        if (emailParam) setVerifyEmail(emailParam);
         setStep('verify-email');
+      } else if (emailParam) {
+        setVerifyEmail(emailParam);
       }
     }
   }, []);
@@ -68,8 +79,10 @@ export function AuthScreens({ onAuthenticated }: AuthScreensProps) {
     } catch (err: any) {
       const msg = err.message || 'Đăng nhập không thành công.';
       setError(msg);
-      if (msg.includes('chua xac thuc email') || msg.includes('chưa xác thực email')) {
-        setVerifyEmail(username.includes('@') ? username : '');
+      if (msg.toLowerCase().includes('chua xac thuc email') || msg.toLowerCase().includes('chưa xác thực email')) {
+        if (username.includes('@')) {
+          setVerifyEmail(username);
+        }
       }
     } finally {
       setIsLoading(false);
@@ -90,7 +103,7 @@ export function AuthScreens({ onAuthenticated }: AuthScreensProps) {
       });
       setIsOfflineMode(!res.isOnline);
       setVerifyEmail(regEmail);
-      setSuccessMsg('Đăng ký tài khoản thành công! Email xác thực đã được gửi. Vui lòng kiểm tra hộp thư.');
+      setSuccessMsg('Đăng ký tài khoản thành công! Mã OTP xác thực đã được gửi về email của bạn. Vui lòng kiểm tra hộp thư.');
       setStep('verify-email');
     } catch (err: any) {
       setError(err.message || 'Đăng ký tài khoản thất bại.');
@@ -101,16 +114,21 @@ export function AuthScreens({ onAuthenticated }: AuthScreensProps) {
 
   const handleVerifyEmailSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!verifyOtp) {
+      setError('Vui lòng nhập mã OTP 6 chữ số.');
+      return;
+    }
     setError(null);
     setSuccessMsg(null);
     setIsLoading(true);
     try {
-      const res = await authApi.verifyEmail(verifyToken);
+      const res = await authApi.verifyEmail(verifyOtp, verifyEmail);
       setIsOfflineMode(!res.isOnline);
       setSuccessMsg(res.data?.message || 'Xác thực email thành công! Bạn có thể đăng nhập ngay.');
+      setVerifyOtp('');
       setStep('login');
     } catch (err: any) {
-      setError(err.message || 'Xác thực email thất bại. Token có thể đã hết hạn hoặc không hợp lệ.');
+      setError(err.message || 'Xác thực email thất bại. Mã OTP có thể không chính xác hoặc đã hết hạn.');
     } finally {
       setIsLoading(false);
     }
@@ -118,7 +136,7 @@ export function AuthScreens({ onAuthenticated }: AuthScreensProps) {
 
   const handleResendVerification = async () => {
     if (!verifyEmail) {
-      setError('Vui lòng nhập Email để gửi lại mã xác thực.');
+      setError('Vui lòng nhập Email để gửi lại mã OTP xác thực.');
       return;
     }
     setError(null);
@@ -126,9 +144,52 @@ export function AuthScreens({ onAuthenticated }: AuthScreensProps) {
     setIsLoading(true);
     try {
       const res = await authApi.resendVerification(verifyEmail);
-      setSuccessMsg(res.data?.message || 'Đã gửi lại yêu cầu xác thực email.');
+      setSuccessMsg(res.data?.message || 'Nếu email tồn tại và chưa xác thực, hệ thống đã gửi lại mã OTP.');
     } catch (err: any) {
       setError(err.message || 'Không thể gửi lại email xác thực.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleForgotPasswordSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!forgotEmail) {
+      setError('Vui lòng nhập email tài khoản.');
+      return;
+    }
+    setError(null);
+    setSuccessMsg(null);
+    setIsLoading(true);
+    try {
+      const res = await authApi.forgotPassword(forgotEmail);
+      setOtpSent(true);
+      setSuccessMsg(res.data?.message || 'Nếu email tồn tại, hệ thống đã gửi mã OTP xác thực.');
+    } catch (err: any) {
+      setError(err.message || 'Không thể gửi mã OTP đặt lại mật khẩu.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleResetPasswordSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!forgotEmail || !forgotOtp || !forgotNewPassword) {
+      setError('Vui lòng điền đầy đủ Email, Mã OTP và Mật khẩu mới.');
+      return;
+    }
+    setError(null);
+    setSuccessMsg(null);
+    setIsLoading(true);
+    try {
+      const res = await authApi.resetPassword(forgotEmail, forgotOtp, forgotNewPassword);
+      setSuccessMsg(res.data?.message || 'Đặt lại mật khẩu thành công! Bạn có thể đăng nhập ngay.');
+      setOtpSent(false);
+      setForgotOtp('');
+      setForgotNewPassword('');
+      setStep('login');
+    } catch (err: any) {
+      setError(err.message || 'Đặt lại mật khẩu thất bại. Mã OTP có thể không chính xác hoặc đã hết hạn.');
     } finally {
       setIsLoading(false);
     }
@@ -166,9 +227,25 @@ export function AuthScreens({ onAuthenticated }: AuthScreensProps) {
             </div>
 
             {error && (
-              <div className="p-3 bg-error/10 border border-error/30 text-error rounded-xl text-xs font-semibold flex items-center gap-2">
-                <AlertTriangle className="w-4 h-4 shrink-0" />
-                <span>{error}</span>
+              <div className="p-3.5 bg-error/10 border border-error/30 text-error rounded-xl text-xs font-semibold space-y-2">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0" />
+                  <span>{error}</span>
+                </div>
+                {(error.toLowerCase().includes('chua xac thuc email') || error.toLowerCase().includes('chưa xác thực email')) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setError(null);
+                      setSuccessMsg(null);
+                      setStep('verify-email');
+                    }}
+                    className="w-full bg-error/20 hover:bg-error/30 text-error font-medium py-1.5 px-3 rounded-lg text-xs transition-colors flex items-center justify-center gap-1.5 cursor-pointer mt-1"
+                  >
+                    <span>Nhập mã OTP xác thực tài khoản ngay</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </button>
+                )}
               </div>
             )}
 
@@ -222,13 +299,22 @@ export function AuthScreens({ onAuthenticated }: AuthScreensProps) {
                 >
                   Chưa có tài khoản? Đăng ký
                 </button>
-                <button
-                  type="button"
-                  onClick={() => { setError(null); setSuccessMsg(null); setStep('verify-email'); }}
-                  className="text-on-surface-variant hover:text-on-surface font-medium cursor-pointer"
-                >
-                  Xác thực Email / Token
-                </button>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => { setError(null); setSuccessMsg(null); setStep('forgot'); }}
+                    className="text-primary hover:underline font-medium cursor-pointer"
+                  >
+                    Quên mật khẩu?
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setError(null); setSuccessMsg(null); setStep('verify-email'); }}
+                    className="text-on-surface-variant hover:text-on-surface font-medium cursor-pointer"
+                  >
+                    Xác thực OTP
+                  </button>
+                </div>
               </div>
 
               <button
@@ -360,9 +446,9 @@ export function AuthScreens({ onAuthenticated }: AuthScreensProps) {
             </div>
 
             <div className="text-center">
-              <h2 className="text-2xl font-bold text-on-surface">Xác thực Email</h2>
+              <h2 className="text-2xl font-bold text-on-surface">Xác thực Email bằng OTP</h2>
               <p className="text-on-surface-variant text-xs mt-1.5 leading-relaxed">
-                Nhập Token xác thực được gửi qua Email hoặc từ liên kết xác thực của bạn.
+                Nhập mã OTP 6 chữ số được gửi qua Email của bạn để kích hoạt tài khoản.
               </p>
             </div>
 
@@ -382,13 +468,25 @@ export function AuthScreens({ onAuthenticated }: AuthScreensProps) {
 
             <div className="space-y-4">
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-on-surface">Mã / Token xác thực *</label>
+                <label className="text-xs font-medium text-on-surface">Địa chỉ Email</label>
+                <input
+                  type="email"
+                  value={verifyEmail}
+                  onChange={(e) => setVerifyEmail(e.target.value)}
+                  placeholder="email@example.com"
+                  className="w-full bg-surface border border-outline-variant/40 rounded-xl px-4 py-2.5 text-sm text-on-surface focus:outline-none focus:border-primary transition-all"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-on-surface">Mã OTP (6 chữ số) *</label>
                 <input
                   type="text"
-                  value={verifyToken}
-                  onChange={(e) => setVerifyToken(e.target.value)}
-                  placeholder="Nhập verification token..."
-                  className="w-full bg-surface border border-outline-variant/40 rounded-xl px-4 py-3 text-sm text-on-surface focus:outline-none focus:border-primary font-mono transition-all"
+                  value={verifyOtp}
+                  onChange={(e) => setVerifyOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                  placeholder="Ví dụ: 123456"
+                  maxLength={6}
+                  className="w-full bg-surface border border-outline-variant/40 rounded-xl px-4 py-3 text-lg font-mono tracking-widest text-center text-on-surface focus:outline-none focus:border-primary transition-all"
                   required
                 />
               </div>
@@ -398,29 +496,20 @@ export function AuthScreens({ onAuthenticated }: AuthScreensProps) {
                 disabled={isLoading}
                 className="w-full bg-primary text-on-primary py-3 rounded-xl font-medium hover:opacity-95 transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
               >
-                {isLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : 'Xác thực Email'}
+                {isLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : 'Xác thực tài khoản'}
               </button>
 
               <div className="border-t border-outline-variant/20 pt-4 space-y-3">
-                <div className="space-y-1.5">
-                  <label className="text-[11px] font-medium text-on-surface-variant">Chưa nhận được mail?</label>
-                  <div className="flex gap-2">
-                    <input
-                      type="email"
-                      value={verifyEmail}
-                      onChange={(e) => setVerifyEmail(e.target.value)}
-                      placeholder="email@example.com"
-                      className="flex-1 bg-surface border border-outline-variant/40 rounded-xl px-3 py-2 text-xs text-on-surface focus:outline-none focus:border-primary transition-all"
-                    />
-                    <button
-                      type="button"
-                      onClick={handleResendVerification}
-                      disabled={isLoading}
-                      className="bg-surface-container-high border border-outline-variant/40 hover:bg-surface-container-highest px-3 py-2 rounded-xl text-xs text-on-surface font-medium cursor-pointer transition-all shrink-0"
-                    >
-                      Gửi lại mail
-                    </button>
-                  </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-on-surface-variant">Chưa nhận được mã OTP?</span>
+                  <button
+                    type="button"
+                    onClick={handleResendVerification}
+                    disabled={isLoading}
+                    className="text-xs text-primary hover:underline font-medium cursor-pointer"
+                  >
+                    Gửi lại mã OTP
+                  </button>
                 </div>
 
                 <button
@@ -518,6 +607,134 @@ export function AuthScreens({ onAuthenticated }: AuthScreensProps) {
               </button>
             </div>
           </form>
+        );
+
+      case 'forgot':
+        return (
+          <div className="space-y-6">
+            <div className="flex justify-center mb-2">
+              <div className="w-14 h-14 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary">
+                <KeyRound className="w-7 h-7" />
+              </div>
+            </div>
+
+            <div className="text-center">
+              <h2 className="text-2xl font-bold text-on-surface">Quên mật khẩu</h2>
+              <p className="text-on-surface-variant text-xs mt-1.5 leading-relaxed">
+                {!otpSent
+                  ? 'Nhập email tài khoản để nhận mã OTP xác thực đặt lại mật khẩu.'
+                  : 'Nhập mã OTP 6 chữ số vừa gửi về email và mật khẩu mới của bạn.'}
+              </p>
+            </div>
+
+            {error && (
+              <div className="p-3 bg-error/10 border border-error/30 text-error rounded-xl text-xs font-semibold flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 shrink-0" />
+                <span>{error}</span>
+              </div>
+            )}
+
+            {successMsg && (
+              <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 rounded-xl text-xs font-semibold flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 shrink-0" />
+                <span>{successMsg}</span>
+              </div>
+            )}
+
+            {!otpSent ? (
+              <form onSubmit={handleForgotPasswordSubmit} className="space-y-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-on-surface">Địa chỉ Email *</label>
+                  <input
+                    type="email"
+                    value={forgotEmail}
+                    onChange={(e) => setForgotEmail(e.target.value)}
+                    placeholder="email@example.com"
+                    className="w-full bg-surface border border-outline-variant/40 rounded-xl px-4 py-3 text-sm text-on-surface focus:outline-none focus:border-primary transition-all"
+                    required
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={isLoading}
+                  className="w-full bg-primary text-on-primary py-3 rounded-xl font-medium hover:opacity-95 transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                >
+                  {isLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : 'Gửi mã OTP qua Email'}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => { setError(null); setSuccessMsg(null); setStep('login'); }}
+                  className="w-full py-2 text-xs font-medium text-on-surface-variant hover:text-on-surface cursor-pointer text-center"
+                >
+                  Quay lại đăng nhập
+                </button>
+              </form>
+            ) : (
+              <form onSubmit={handleResetPasswordSubmit} className="space-y-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-on-surface">Mã OTP (6 chữ số) *</label>
+                  <input
+                    type="text"
+                    value={forgotOtp}
+                    onChange={(e) => setForgotOtp(e.target.value)}
+                    placeholder="Ví dụ: 123456"
+                    className="w-full bg-surface border border-outline-variant/40 rounded-xl px-4 py-3 text-sm text-on-surface font-mono tracking-widest text-center focus:outline-none focus:border-primary transition-all"
+                    maxLength={6}
+                    required
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-on-surface">Mật khẩu mới *</label>
+                  <div className="relative">
+                    <input
+                      type={showForgotNewPassword ? 'text' : 'password'}
+                      value={forgotNewPassword}
+                      onChange={(e) => setForgotNewPassword(e.target.value)}
+                      placeholder="•••••••• (tối thiểu 6 ký tự)"
+                      className="w-full bg-surface border border-outline-variant/40 rounded-xl pl-4 pr-11 py-3 text-sm text-on-surface focus:outline-none focus:border-primary transition-all"
+                      required
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowForgotNewPassword(!showForgotNewPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant hover:text-on-surface p-1 transition-colors cursor-pointer"
+                      title={showForgotNewPassword ? 'Ẩn mật khẩu' : 'Hiển thị mật khẩu'}
+                    >
+                      {showForgotNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={isLoading}
+                  className="w-full bg-primary text-on-primary py-3 rounded-xl font-medium hover:opacity-95 transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                >
+                  {isLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : 'Xác nhận đổi mật khẩu'}
+                </button>
+
+                <div className="flex justify-between items-center text-xs text-on-surface-variant pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setOtpSent(false)}
+                    className="hover:text-on-surface underline cursor-pointer"
+                  >
+                    Gửi lại OTP
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setError(null); setSuccessMsg(null); setStep('login'); }}
+                    className="hover:text-on-surface underline cursor-pointer"
+                  >
+                    Quay lại đăng nhập
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
         );
 
       default:

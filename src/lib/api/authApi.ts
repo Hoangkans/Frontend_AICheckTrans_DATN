@@ -115,19 +115,20 @@ export const authApi = {
   },
 
   /**
-   * API Xác thực Email qua Token (POST /api/v1/auth/verify-email)
-   * @param token Token xác thực gửi từ Email
+   * API Xác thực Email qua Mã OTP (POST /api/v1/auth/verify-email)
+   * @param otp Mã OTP 6 chữ số gửi qua Email
+   * @param email (Tùy chọn) Địa chỉ Email tài khoản
    */
-  verifyEmail: async (token: string) => {
+  verifyEmail: async (otp: string, email?: string) => {
     const isOnline = await checkBackendHealth();
     if (isOnline) {
       const data = await request('/auth/verify-email', {
         method: 'POST',
-        body: JSON.stringify({ token }),
+        body: JSON.stringify({ otp, email: email || undefined }),
       });
       return { isOnline: true, data };
     } else {
-      if (!token) throw new Error('Token không hợp lệ.');
+      if (!otp) throw new Error('Mã OTP không hợp lệ.');
       return { isOnline: false, data: { message: 'Xác thực email thành công (Offline Mode).' } };
     }
   },
@@ -146,6 +147,42 @@ export const authApi = {
       return { isOnline: true, data };
     } else {
       return { isOnline: false, data: { message: 'Đã gửi lại yêu cầu xác thực email (Offline Mode).' } };
+    }
+  },
+
+  /**
+   * API Yêu cầu mã OTP Quên mật khẩu (POST /api/v1/auth/forgot-password)
+   * @param email Địa chỉ Email tài khoản
+   */
+  forgotPassword: async (email: string) => {
+    const isOnline = await checkBackendHealth();
+    if (isOnline) {
+      const data = await request('/auth/forgot-password', {
+        method: 'POST',
+        body: JSON.stringify({ email }),
+      });
+      return { isOnline: true, data };
+    } else {
+      return { isOnline: false, data: { message: 'Đã gửi mã OTP đặt lại mật khẩu (Offline Mode).' } };
+    }
+  },
+
+  /**
+   * API Đặt lại mật khẩu bằng OTP (POST /api/v1/auth/reset-password)
+   * @param email Email tài khoản
+   * @param otp Mã OTP gồm 6 chữ số
+   * @param newPassword Mật khẩu mới
+   */
+  resetPassword: async (email: string, otp: string, newPassword: string) => {
+    const isOnline = await checkBackendHealth();
+    if (isOnline) {
+      const data = await request('/auth/reset-password', {
+        method: 'POST',
+        body: JSON.stringify({ email, otp, newPassword }),
+      });
+      return { isOnline: true, data };
+    } else {
+      return { isOnline: false, data: { message: 'Đặt lại mật khẩu thành công (Offline Mode).' } };
     }
   },
 
