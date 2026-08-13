@@ -8,11 +8,31 @@ export const mockCameras: CameraFeed[] = [
     resolution: '720p',
     fps: 30,
     image: 'https://images.unsplash.com/photo-1544621035-1f9e2b144b20?auto=format&fit=crop&q=80&w=800',
-    currentAlert: {
-      type: 'SPEEDING',
-      speed: '85mph',
-      box: { x: 40, y: 50, w: 20, h: 30 }
-    }
+    detectedVehicles: [
+      {
+        id: 'V-101',
+        type: 'Ô tô',
+        licensePlate: '30F-892.34',
+        isViolation: true,
+        violationType: 'SPEEDING',
+        speed: '88 km/h',
+        speedLimit: '60 km/h',
+        confidence: 0.982,
+        box: { x: 38, y: 58, w: 18, h: 22 },
+        timestamp: '14:00:48 ICT',
+        snapshotUrl: 'https://images.unsplash.com/photo-1544621035-1f9e2b144b20?auto=format&fit=crop&q=80&w=400'
+      },
+      {
+        id: 'V-102',
+        type: 'Xe máy',
+        licensePlate: '29H-124.90',
+        isViolation: false,
+        speed: '45 km/h',
+        confidence: 0.941,
+        box: { x: 62, y: 65, w: 10, h: 16 },
+        timestamp: '14:00:48 ICT'
+      }
+    ]
   },
   {
     id: 'CAM-E-022',
@@ -21,10 +41,21 @@ export const mockCameras: CameraFeed[] = [
     resolution: '1080p',
     fps: 60,
     image: 'https://images.unsplash.com/photo-1449965408869-eaa3f722e40d?auto=format&fit=crop&q=80&w=800',
-    currentAlert: {
-      type: 'TRUCK_ONL',
-      box: { x: 50, y: 60, w: 30, h: 20 }
-    }
+    detectedVehicles: [
+      {
+        id: 'V-201',
+        type: 'Xe tải',
+        licensePlate: '60C-212.90',
+        isViolation: true,
+        violationType: 'SPEEDING',
+        speed: '75 km/h',
+        speedLimit: '50 km/h',
+        confidence: 0.965,
+        box: { x: 48, y: 52, w: 24, h: 28 },
+        timestamp: '13:58:05 ICT',
+        snapshotUrl: 'https://images.unsplash.com/photo-1449965408869-eaa3f722e40d?auto=format&fit=crop&q=80&w=400'
+      }
+    ]
   },
   {
     id: 'CAM-W-088',
@@ -36,16 +67,39 @@ export const mockCameras: CameraFeed[] = [
     name: 'CAM-S-105',
     status: 'LIVE',
     image: 'https://images.unsplash.com/photo-1515162816999-a0c47dc192f7?auto=format&fit=crop&q=80&w=800',
-    currentAlert: {
-      type: 'WRONG_WAY',
-      box: { x: 60, y: 30, w: 15, h: 25 }
-    }
+    detectedVehicles: [
+      {
+        id: 'V-301',
+        type: 'Ô tô',
+        licensePlate: '51G-555.22',
+        isViolation: true,
+        violationType: 'WRONG_WAY',
+        speed: '42 km/h',
+        speedLimit: '50 km/h',
+        confidence: 0.954,
+        box: { x: 55, y: 45, w: 16, h: 20 },
+        timestamp: '14:01:12 ICT',
+        snapshotUrl: 'https://images.unsplash.com/photo-1515162816999-a0c47dc192f7?auto=format&fit=crop&q=80&w=400'
+      }
+    ]
   },
   {
     id: 'CAM-C-050',
     name: 'CAM-C-050',
     status: 'LIVE',
-    image: 'https://images.unsplash.com/photo-1473210319455-8d59d18b2611?auto=format&fit=crop&q=80&w=800'
+    image: 'https://images.unsplash.com/photo-1473210319455-8d59d18b2611?auto=format&fit=crop&q=80&w=800',
+    detectedVehicles: [
+      {
+        id: 'V-401',
+        type: 'Ô tô',
+        licensePlate: '30E-981.12',
+        isViolation: false,
+        speed: '50 km/h',
+        confidence: 0.978,
+        box: { x: 25, y: 55, w: 18, h: 22 },
+        timestamp: '14:02:00 ICT'
+      }
+    ]
   },
   {
     id: 'CAM-N-015',

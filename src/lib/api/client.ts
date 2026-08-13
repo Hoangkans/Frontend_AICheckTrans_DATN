@@ -93,16 +93,28 @@ export function clearTokens() {
  */
 export async function request(path: string, options: RequestInit = {}): Promise<any> {
   const token = getAccessToken();
+  const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
   
-  // Đính kèm token và Content-Type mặc định
-  const headers = {
-    'Content-Type': 'application/json',
+  // Đính kèm token và Content-Type mặc định (không gán Content-Type nếu là FormData)
+  const headers: Record<string, string> = {
+    ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    ...options.headers,
+    ...(options.headers as Record<string, string> || {}),
   };
 
   const url = `${BASE_URL}${path}`;
-  const requestPayload = options.body ? JSON.parse(options.body as string) : null;
+  let requestPayload: any = null;
+  if (options.body) {
+    if (isFormData) {
+      requestPayload = '[FormData Payload]';
+    } else {
+      try {
+        requestPayload = JSON.parse(options.body as string);
+      } catch (e) {
+        requestPayload = options.body;
+      }
+    }
+  }
   
   let response;
   try {

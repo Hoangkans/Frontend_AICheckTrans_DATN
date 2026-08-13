@@ -25,6 +25,20 @@ export interface ViewConfig {
 
 export type AppView = 'auth' | 'recovery' | 'reset-password' | 'dashboard' | 'cameras' | 'search' | 'violations' | 'analytics' | 'settings' | 'admin-dashboard' | 'admin-users' | 'admin-settings';
 
+export interface DetectedVehicle {
+  id: string;
+  type: string;
+  licensePlate?: string;
+  isViolation: boolean;
+  violationType?: 'SPEEDING' | 'RED_LIGHT' | 'WRONG_WAY' | 'NO_HELMET' | 'PARKING';
+  speed?: string;
+  speedLimit?: string;
+  confidence: number;
+  box: { x: number; y: number; w: number; h: number };
+  timestamp?: string;
+  snapshotUrl?: string;
+}
+
 export interface CameraFeed {
   id: string;
   name: string;
@@ -38,5 +52,7 @@ export interface CameraFeed {
     speed?: string;
     box: { x: number; y: number; w: number; h: number };
   };
+  detectedVehicles?: DetectedVehicle[];
 }
+
 

@@ -5,3 +5,6 @@ export * from './settingsApi';
 export * from './cameraApi';
 export * from './violationApi';
 export * from './statsApi';
+export * from './detectionApi';
+export * from './trainingApi';
+
