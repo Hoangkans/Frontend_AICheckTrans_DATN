@@ -3,7 +3,7 @@ import { Search, Car, MapPin, AlertTriangle, HelpCircle } from 'lucide-react';
 import { violationApi } from '../lib/api';
 
 export function SearchView() {
-  const [plateInput, setPlateInput] = useState('30F-123.45');
+  const [plateInput, setPlateInput] = useState('');
   const [results, setResults] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
@@ -21,11 +21,6 @@ export function SearchView() {
       setLoading(false);
     }
   };
-
-  // Perform initial search
-  useEffect(() => {
-    handleSearch();
-  }, []);
 
   const hasViolations = results.length > 0;
   const latestRecord = results[0];

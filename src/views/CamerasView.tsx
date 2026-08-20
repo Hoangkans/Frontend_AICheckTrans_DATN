@@ -2,7 +2,8 @@ import { useState, useEffect, useRef } from 'react';
 import { 
   VideoOff, Maximize, LayoutGrid, Download, Settings2, Activity, PlaySquare, 
   ZoomIn, Upload, X, FileVideo, Play, Plus, Trash2, Edit2, Bell, ShieldAlert, 
-  CheckCircle2, Car, FileText, Send, Crosshair, Info, Layers, AlertTriangle
+  CheckCircle2, Car, FileText, Send, Crosshair, Info, Layers, AlertTriangle,
+  Search, ChevronLeft, ChevronRight, ChevronsUpDown, RotateCcw, History, Clock, Pause
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { CameraFeed, DetectedVehicle } from '../types';
@@ -10,11 +11,7 @@ import { cameraApi, detectionApi } from '../lib/api';
 
 export function CamerasView() {
   const [cameras, setCameras] = useState<CameraFeed[]>([]);
-  const [alerts, setAlerts] = useState<any[]>([
-    { id: '1', type: 'Speeding', value: '88 km/h', camera: 'CAM-N-014', time: '14:00:48 ICT', color: 'text-error', borderColor: 'border-error/30' },
-    { id: '2', type: 'Wrong Way', value: '42 km/h', camera: 'CAM-S-105', time: '14:01:12 ICT', color: 'text-tertiary', borderColor: 'border-tertiary/30' },
-    { id: '3', type: 'Speeding', value: '75 km/h', camera: 'CAM-E-022', time: '13:58:05 ICT', color: 'text-error', borderColor: 'border-error/30' }
-  ]);
+  const [alerts, setAlerts] = useState<any[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isAddEditOpen, setIsAddEditOpen] = useState(false);
   const [selectedInspectionCam, setSelectedInspectionCam] = useState<CameraFeed | null>(null);
@@ -151,150 +148,129 @@ export function CamerasView() {
       ? cameras[0].id 
       : '00000000-0000-0000-0000-000000000001';
 
-    if (isOnline && !targetCamId.startsWith('CAM-LOCAL-')) {
-      try {
-        setUploadProgress(20);
-        setAnalysisLogs(prev => [...prev, `[SYSTEM] Đang tải file lên Backend API (/api/v1/detections/detect)...`]);
+    try {
+      setUploadProgress(20);
+      setAnalysisLogs(prev => [...prev, `[SYSTEM] Đang tải file video lên Backend API (/api/v1/detections/detect)...`]);
 
-        setUploadProgress(45);
-        setAnalysisLogs(prev => [...prev, `[AI] Đang chạy mô hình YOLO detect đối tượng và kiểm tra vi phạm...`]);
+      setUploadProgress(45);
+      setAnalysisLogs(prev => [...prev, `[AI] Đang chạy mô hình Detection.pt & License_Plate.pt...`]);
 
-        const res = await detectionApi.detect(targetCamId, selectedFile);
+      const res = await detectionApi.detect(targetCamId, selectedFile);
 
-        setUploadProgress(90);
-        const count = res.data?.count ?? 0;
-        const vCount = res.data?.violations_count ?? 0;
-        setAnalysisLogs(prev => [
-          ...prev,
-          `[SUCCESS] Backend xử lý thành công! Tìm thấy ${count} đối tượng và ${vCount} vi phạm.`,
-        ]);
+      setUploadProgress(90);
+      const count = res.data?.count ?? 0;
+      const vCount = res.data?.violations_count ?? 0;
+      setAnalysisLogs(prev => [
+        ...prev,
+        `[SUCCESS] Backend xử lý video thành công! Tìm thấy ${count} đối tượng và ${vCount} vi phạm.`,
+      ]);
+
+      if (vCount > 0) {
+        setAnalysisLogs(prev => [...prev, `[WARNING] Đã tự động ghi nhận ${vCount} bản ghi vi phạm vào PostgreSQL!`]);
+      }
+
+      setUploadProgress(100);
+
+      setTimeout(() => {
+        const newCamId = 'CAM-UPLOAD-' + Math.floor(Math.random() * 1000);
+        
+        const rawDetections = res.data?.detections || [];
+        const uploadedVehicles: DetectedVehicle[] = rawDetections.map((d: any, idx: number) => {
+          const typeMap: Record<string, string> = {
+            car: 'Ô tô',
+            truck: 'Xe tải',
+            bus: 'Xe khách',
+            motorcycle: 'Xe máy',
+            bicycle: 'Xe đạp',
+            person: 'Người đi bộ',
+            traffic_light: 'Đèn giao thông',
+            traffic_sign: 'Biển báo'
+          };
+          const bbox = d.bbox || {};
+          const x1 = Number(bbox.x1 ?? 0);
+          const y1 = Number(bbox.y1 ?? 0);
+          const x2 = Number(bbox.x2 ?? 0);
+          const y2 = Number(bbox.y2 ?? 0);
+
+          let fw = Number(d.metadata?.frame_width || d.metadata?.width || 0);
+          let fh = Number(d.metadata?.frame_height || d.metadata?.height || 0);
+
+          let xPct = 0;
+          let yPct = 0;
+          let wPct = 0;
+          let hPct = 0;
+
+          if (x1 <= 1 && x2 <= 1 && x2 > 0) {
+            // Normalized 0..1 coordinates
+            xPct = x1 * 100;
+            yPct = y1 * 100;
+            wPct = Math.max(3, (x2 - x1) * 100);
+            hPct = Math.max(3, (y2 - y1) * 100);
+          } else {
+            // Pixel coordinates
+            if (!fw || fw < x2) fw = Math.max(x2, 1920);
+            if (!fh || fh < y2) fh = Math.max(y2, 1080);
+            wPct = Math.min(90, Math.max(4, ((x2 - x1) / fw) * 100));
+            hPct = Math.min(90, Math.max(4, ((y2 - y1) / fh) * 100));
+            xPct = Math.min(100 - wPct, Math.max(0, (x1 / fw) * 100));
+            yPct = Math.min(100 - hPct, Math.max(0, (y1 / fh) * 100));
+          }
+
+          const plateStr = d.license_plate || d.metadata?.license_plate;
+          const rawViolType = d.violation_type || d.metadata?.violation_type || (vCount > 0 && idx === 0 ? 'SPEEDING' : undefined);
+          const isViol = Boolean(rawViolType || d.is_violation || d.metadata?.is_violation);
+
+          return {
+            id: d.id || `V-UP-${idx + 101}`,
+            type: typeMap[d.vehicle_type] || d.vehicle_type || 'Phương tiện',
+            licensePlate: plateStr || undefined,
+            isViolation: isViol,
+            violationType: isViol ? (rawViolType || 'SPEEDING') : undefined,
+            speed: d.metadata?.speed_kmh ? `${d.metadata.speed_kmh} km/h` : undefined,
+            speedLimit: d.metadata?.speed_limit ? `${d.metadata.speed_limit} km/h` : undefined,
+            confidence: d.confidence || 0.95,
+            box: { x: xPct, y: yPct, w: wPct, h: hPct },
+            timestamp: new Date().toLocaleTimeString() + ' ICT',
+            snapshotUrl: selectedVideoUrl || undefined
+          };
+        });
+
+        const newCam: CameraFeed = {
+          id: newCamId,
+          name: 'VIDEO-' + selectedFile.name.substring(0, 10).toUpperCase(),
+          status: 'LIVE',
+          resolution: '1080p',
+          fps: 30,
+          image: selectedVideoUrl || undefined,
+          videoUrl: selectedVideoUrl || undefined,
+          detectedVehicles: uploadedVehicles
+        };
+
+        setCameras(prev => [newCam, ...prev]);
 
         if (vCount > 0) {
-          setAnalysisLogs(prev => [...prev, `[WARNING] Đã tự động tạo ${vCount} bản ghi vi phạm trong hệ thống!`]);
-        }
-
-        setUploadProgress(100);
-
-        setTimeout(() => {
-          const newCamId = 'CAM-UPLOAD-' + Math.floor(Math.random() * 1000);
-          
-          const uploadedVehicles: DetectedVehicle[] = [
-            {
-              id: 'V-UP-101',
-              type: 'Ô tô',
-              licensePlate: '30F-558.91',
-              isViolation: vCount > 0,
-              violationType: 'SPEEDING',
-              speed: '84 km/h',
-              speedLimit: '60 km/h',
-              confidence: 0.975,
-              box: { x: 32, y: 50, w: 22, h: 26 },
-              timestamp: new Date().toLocaleTimeString() + ' ICT',
-              snapshotUrl: selectedVideoUrl || undefined
-            },
-            {
-              id: 'V-UP-102',
-              type: 'Xe máy',
-              licensePlate: '29K1-442.10',
-              isViolation: false,
-              speed: '48 km/h',
-              confidence: 0.942,
-              box: { x: 65, y: 58, w: 12, h: 18 },
-              timestamp: new Date().toLocaleTimeString() + ' ICT'
-            }
-          ];
-
-          const newCam: CameraFeed = {
-            id: newCamId,
-            name: 'ANALYSIS-' + selectedFile.name.substring(0, 8).toUpperCase(),
-            status: 'LIVE',
-            resolution: '1080p',
-            fps: 30,
-            image: 'https://images.unsplash.com/photo-1506012787146-f92b2d7d6d96?auto=format&fit=crop&q=80&w=800',
-            videoUrl: selectedVideoUrl || undefined,
-            detectedVehicles: uploadedVehicles
+          const newAlert = {
+            id: String(Date.now()),
+            type: 'Quá tốc độ',
+            camera: newCam.name,
+            time: new Date().toLocaleTimeString() + ' ICT',
+            color: 'text-error',
+            borderColor: 'border-error/30'
           };
-
-          setCameras(prev => [newCam, ...prev]);
-
-          if (vCount > 0) {
-            const newAlert = {
-              id: String(Date.now()),
-              type: 'Quá tốc độ (84/60 km/h)',
-              camera: newCam.name,
-              time: new Date().toLocaleTimeString() + ' ICT',
-              color: 'text-error',
-              borderColor: 'border-error/30'
-            };
-            setAlerts(prev => [newAlert, ...prev]);
-          }
-
-          setIsModalOpen(false);
-          setIsAnalyzing(false);
-          setSelectedFile(null);
-          setUploadProgress(0);
-
-          // Automatically open inspection for newly analyzed video
-          openInspection(newCam, uploadedVehicles[0]);
-        }, 1200);
-      } catch (err: any) {
-        console.error('Lỗi khi phân tích video:', err);
-        setAnalysisLogs(prev => [...prev, `[ERROR] Phân tích video thất bại: ${err.message || err}`]);
-        setIsAnalyzing(false);
-      }
-    } else {
-      let progress = 0;
-      analysisIntervalRef.current = setInterval(() => {
-        progress += 10;
-        if (progress > 100) progress = 100;
-        setUploadProgress(progress);
-
-        if (progress === 30) {
-          setAnalysisLogs(prev => [...prev, '[SYSTEM] Đang mô phỏng phân tích tệp tin: ' + selectedFile.name]);
-        } else if (progress === 60) {
-          setAnalysisLogs(prev => [...prev, '[AI] Dò tìm phương tiện và phân tích hành vi...']);
-        } else if (progress === 100) {
-          if (analysisIntervalRef.current) {
-            clearInterval(analysisIntervalRef.current);
-            analysisIntervalRef.current = null;
-          }
-          setAnalysisLogs(prev => [...prev, '[SUCCESS] Phân tích hoàn tất (Mô phỏng)!']);
-          setTimeout(() => {
-            const newCamId = 'CAM-UPLOAD-' + Math.floor(Math.random() * 1000);
-            const uploadedVehicles: DetectedVehicle[] = [
-              {
-                id: 'V-UP-101',
-                type: 'Ô tô',
-                licensePlate: '30F-558.91',
-                isViolation: true,
-                violationType: 'SPEEDING',
-                speed: '84 km/h',
-                speedLimit: '60 km/h',
-                confidence: 0.975,
-                box: { x: 34, y: 52, w: 20, h: 26 },
-                timestamp: new Date().toLocaleTimeString() + ' ICT'
-              }
-            ];
-            const newCam: CameraFeed = {
-              id: newCamId,
-              name: 'ANALYSIS-' + selectedFile.name.substring(0, 8).toUpperCase(),
-              status: 'LIVE',
-              resolution: '1080p',
-              fps: 30,
-              image: 'https://images.unsplash.com/photo-1506012787146-f92b2d7d6d96?auto=format&fit=crop&q=80&w=800',
-              videoUrl: selectedVideoUrl || undefined,
-              detectedVehicles: uploadedVehicles
-            };
-            setCameras(prev => [newCam, ...prev]);
-            setIsModalOpen(false);
-            setIsAnalyzing(false);
-            setSelectedFile(null);
-            setUploadProgress(0);
-
-            openInspection(newCam, uploadedVehicles[0]);
-          }, 1200);
+          setAlerts(prev => [newAlert, ...prev]);
         }
-      }, 200);
+
+        setIsModalOpen(false);
+        setIsAnalyzing(false);
+        setSelectedFile(null);
+        setUploadProgress(0);
+
+        openInspection(newCam, uploadedVehicles[0]);
+      }, 1000);
+    } catch (err: any) {
+      console.error('Lỗi khi phân tích video:', err);
+      setAnalysisLogs(prev => [...prev, `[ERROR] Phân tích video thất bại: ${err.message || err}`]);
+      setIsAnalyzing(false);
     }
   };
 
@@ -967,27 +943,111 @@ interface CameraInspectionModalProps {
 }
 
 function CameraInspectionModal({ camera, initialVehicleTarget, onClose, onNotify }: CameraInspectionModalProps) {
-  const vehicles = camera.detectedVehicles && camera.detectedVehicles.length > 0 
-    ? camera.detectedVehicles 
-    : [
-        {
-          id: 'V-MODAL-1',
-          type: 'Ô tô',
-          licensePlate: '30F-892.34',
-          isViolation: true,
-          violationType: 'SPEEDING' as const,
-          speed: '88 km/h',
-          speedLimit: '60 km/h',
-          confidence: 0.982,
-          box: { x: 38, y: 56, w: 22, h: 26 },
-          timestamp: '14:00:48 ICT',
-          snapshotUrl: camera.image
-        }
-      ];
+  const vehicles = camera.detectedVehicles || [];
 
-  const [activeVehicle, setActiveVehicle] = useState<DetectedVehicle>(
-    initialVehicleTarget || vehicles[0]
+  const [activeVehicle, setActiveVehicle] = useState<DetectedVehicle | null>(
+    initialVehicleTarget || (vehicles.length > 0 ? vehicles[0] : null)
   );
+  const [vehicleSearch, setVehicleSearch] = useState('');
+  const [imgError, setImgError] = useState(false);
+  const [snapshotError, setSnapshotError] = useState(false);
+  const [drawerTab, setDrawerTab] = useState<'active' | 'history'>('active');
+
+  // Tracking Simulation State: Bounding Box motion across video timeline
+  const [isTrackingPaused, setIsTrackingPaused] = useState(false);
+  const [trackingPositions, setTrackingPositions] = useState<Record<string, { x: number; y: number; isExited: boolean; exitTime?: string }>>({});
+  const [exitedHistory, setExitedHistory] = useState<Array<DetectedVehicle & { exitTime: string }>>([]);
+
+  // Initialize tracking positions on mount or vehicle list change
+  useEffect(() => {
+    const initialPos: Record<string, { x: number; y: number; isExited: boolean; exitTime?: string }> = {};
+    vehicles.forEach((v) => {
+      initialPos[v.id] = {
+        x: v.box.x,
+        y: v.box.y,
+        isExited: false
+      };
+    });
+    setTrackingPositions(initialPos);
+    setExitedHistory([]);
+  }, [vehicles]);
+
+  // Motion Tracking Loop: Smoothly translate bounding boxes down the road
+  useEffect(() => {
+    if (isTrackingPaused) return;
+
+    const interval = setInterval(() => {
+      setTrackingPositions((prev) => {
+        const next = { ...prev };
+        let newlyExited: Array<DetectedVehicle & { exitTime: string }> = [];
+
+        vehicles.forEach((v, idx) => {
+          const cur = next[v.id];
+          if (!cur || cur.isExited) return;
+
+          // Move box along traffic trajectory
+          const speedY = 1.0 + (idx % 3) * 0.3;
+          const speedX = 0.4 + (idx % 2) * 0.2;
+
+          const newY = cur.y + speedY;
+          const newX = cur.x + speedX;
+
+          // Check if vehicle has exited the video bounds (bottom/right)
+          if (newY >= 82 || newX >= 88) {
+            const timeStr = new Date().toLocaleTimeString() + ' ICT';
+            next[v.id] = { ...cur, x: newX, y: newY, isExited: true, exitTime: timeStr };
+            newlyExited.push({ ...v, exitTime: timeStr });
+          } else {
+            next[v.id] = { ...cur, x: newX, y: newY };
+          }
+        });
+
+        if (newlyExited.length > 0) {
+          setExitedHistory((prevHist) => {
+            const existingIds = new Set(prevHist.map(h => h.id));
+            const toAdd = newlyExited.filter(e => !existingIds.has(e.id));
+            return [...toAdd, ...prevHist];
+          });
+
+          newlyExited.forEach(ex => {
+            onNotify(
+              `[AI TRACKING] Xe [${ex.licensePlate || ex.id}] đã di chuyển khỏi video -> Đã lưu vào Lịch sử giám sát!`,
+              ex.isViolation ? 'error' : 'info'
+            );
+          });
+        }
+
+        return next;
+      });
+    }, 250);
+
+    return () => clearInterval(interval);
+  }, [vehicles, isTrackingPaused, onNotify]);
+
+  const handleResetTracking = () => {
+    const resetPos: Record<string, { x: number; y: number; isExited: boolean; exitTime?: string }> = {};
+    vehicles.forEach((v) => {
+      resetPos[v.id] = {
+        x: v.box.x,
+        y: v.box.y,
+        isExited: false
+      };
+    });
+    setTrackingPositions(resetPos);
+    setIsTrackingPaused(false);
+    onNotify('Đã phát lại và tái khởi tạo luồng bám theo phương tiện trên video', 'info');
+  };
+
+  const filteredVehicles = vehicles.filter(v => {
+    if (!vehicleSearch.trim()) return true;
+    const q = vehicleSearch.toLowerCase();
+    return (
+      (v.licensePlate && v.licensePlate.toLowerCase().includes(q)) ||
+      v.type.toLowerCase().includes(q) ||
+      v.id.toLowerCase().includes(q) ||
+      (v.violationType && v.violationType.toLowerCase().includes(q))
+    );
+  });
 
   const handleActionRecord = () => {
     onNotify(`Đã lập biên bản vi phạm cho xe ${activeVehicle.licensePlate || activeVehicle.id}! Bản ghi VP-${Math.floor(Math.random()*90000+10000)} đã được ghi vào cơ sở dữ liệu.`, 'error');
@@ -1033,26 +1093,46 @@ function CameraInspectionModal({ camera, initialVehicleTarget, onClose, onNotify
           
           {/* Left Column: Interactive Video Player with Canvas Bounding Boxes */}
           <div className="flex-1 bg-[#020914] relative flex flex-col items-center justify-center p-4 min-h-[350px]">
-            <div className="relative w-full h-full max-h-[70vh] flex items-center justify-center overflow-hidden rounded-xl border border-outline-variant/20 bg-black">
-              {camera.videoUrl ? (
-                <video src={camera.videoUrl} autoPlay loop muted playsInline className="w-full h-full object-contain" />
-              ) : (
-                <img src={camera.image} alt={camera.name} className="w-full h-full object-contain opacity-90" />
-              )}
+            <div className="relative w-full h-full max-h-[70vh] flex items-center justify-center overflow-hidden rounded-xl border border-outline-variant/20 bg-black p-1">
+              <div className="relative flex items-center justify-center max-h-[68vh] max-w-full overflow-hidden rounded-lg">
+                {camera.videoUrl ? (
+                  <video src={camera.videoUrl} autoPlay loop muted playsInline className="max-h-[68vh] max-w-full object-contain block rounded-lg" />
+                ) : !imgError && camera.image ? (
+                  <img 
+                    src={camera.image} 
+                    alt={camera.name} 
+                    onError={() => setImgError(true)}
+                    className="max-h-[68vh] max-w-full object-contain block rounded-lg opacity-90" 
+                  />
+                ) : (
+                  <div className="w-[640px] h-[360px] max-w-full max-h-[68vh] bg-surface-container flex flex-col items-center justify-center rounded-lg text-on-surface-variant p-6 space-y-2 border border-outline-variant/30">
+                    <VideoOff className="w-12 h-12 text-outline-variant" />
+                    <span className="text-xs font-mono">{camera.name} — Khung hình giám sát AI</span>
+                  </div>
+                )}
 
-              {/* Interactive SVG / Html Overlay of Vehicle Target Boxes */}
-              <div className="absolute inset-0 pointer-events-auto">
-                {vehicles.map((v) => {
+                {/* Interactive SVG / Html Overlay of Vehicle Target Boxes */}
+                <div className="absolute inset-0 pointer-events-auto overflow-hidden">
+                {vehicles.map((v, idx) => {
+                  const pos = trackingPositions[v.id];
+                  // If vehicle has exited video bounds, do NOT draw active box on canvas
+                  if (pos?.isExited) return null;
+
+                  const currentX = pos?.x ?? v.box.x;
+                  const currentY = pos?.y ?? v.box.y;
                   const isSelected = activeVehicle?.id === v.id;
+                  const isNearRight = currentX > 55 || (currentX + v.box.w) > 70;
+
                   return (
                     <div
                       key={v.id}
                       onClick={() => {
                         setActiveVehicle(v);
+                        setDrawerTab('active');
                         onNotify(`Đã chọn đối tượng theo dõi [${v.licensePlate || v.id}]`, v.isViolation ? 'error' : 'info');
                       }}
                       className={cn(
-                        "absolute border-2 transition-all duration-200 cursor-pointer rounded flex flex-col justify-between group",
+                        "absolute border-2 transition-all duration-300 ease-linear cursor-pointer rounded flex flex-col justify-between group",
                         v.isViolation 
                           ? isSelected
                             ? "border-red-500 bg-red-500/25 ring-4 ring-red-500/40 shadow-[0_0_25px_rgba(239,68,68,0.8)]"
@@ -1062,22 +1142,25 @@ function CameraInspectionModal({ camera, initialVehicleTarget, onClose, onNotify
                             : "border-emerald-500/70 bg-emerald-500/10 hover:bg-emerald-500/20"
                       )}
                       style={{
-                        left: `${v.box.x}%`,
-                        top: `${v.box.y}%`,
+                        left: `${currentX}%`,
+                        top: `${currentY}%`,
                         width: `${v.box.w}%`,
                         height: `${v.box.h}%`
                       }}
                     >
                       {/* Bounding Box Header Badge */}
                       <div 
-                        className="absolute -top-7 left-0 px-2 py-0.5 text-[10px] font-mono font-bold rounded-t flex items-center gap-1 shadow-md whitespace-nowrap"
+                        className={cn(
+                          "absolute -top-7 px-2 py-0.5 text-[10px] font-mono font-bold rounded-t flex items-center gap-1 shadow-md whitespace-nowrap z-20 max-w-[200px] truncate",
+                          isNearRight ? "right-0" : "left-0"
+                        )}
                         style={{
                           backgroundColor: v.isViolation ? '#ef4444' : '#10b981',
                           color: '#ffffff'
                         }}
                       >
-                        <Crosshair className="w-3 h-3" />
-                        <span>{v.isViolation ? `VI PHẠM: ${v.licensePlate || v.type}` : `${v.type} (${v.licensePlate || 'Chờ quét'})`}</span>
+                        <Crosshair className="w-3 h-3 shrink-0" />
+                        <span className="truncate">{v.isViolation ? `VI PHẠM: ${v.licensePlate || v.type}` : `${v.type} (${v.licensePlate || 'Chờ quét'})`}</span>
                       </div>
 
                       {/* Corner Target Crosshairs */}
@@ -1089,72 +1172,255 @@ function CameraInspectionModal({ camera, initialVehicleTarget, onClose, onNotify
                   );
                 })}
               </div>
+            </div>
 
-              {/* Video Bottom HUD Status */}
-              <div className="absolute bottom-3 inset-x-3 flex justify-between items-center pointer-events-none text-xs font-mono text-white/80 bg-black/60 backdrop-blur-sm px-3 py-1.5 rounded-lg border border-white/10">
+            {/* Video Bottom HUD Status & Tracking Playback Controls */}
+            <div className="absolute bottom-3 inset-x-3 flex justify-between items-center pointer-events-auto text-xs font-mono text-white/90 bg-black/75 backdrop-blur-md px-3.5 py-2 rounded-xl border border-white/10 shadow-lg">
                 <div className="flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
-                  <span>TRACKING MODE: ACTIVE</span>
+                  <span className={cn("w-2.5 h-2.5 rounded-full", isTrackingPaused ? "bg-amber-400" : "bg-emerald-400 animate-ping")}></span>
+                  <span className="font-bold tracking-wide">
+                    {isTrackingPaused ? 'PAUSED: TẠM DỪNG' : 'TRACKING MODE: BÁM THEO CHUYỂN ĐỘNG'}
+                  </span>
                 </div>
-                <div>NHẤN TRỰC TIẾP VÀO XE ĐỂ XEM KẾT QUẢ</div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setIsTrackingPaused(!isTrackingPaused)}
+                    className="px-2.5 py-1 bg-white/10 hover:bg-white/20 rounded-md text-xs font-sans flex items-center gap-1 transition-colors border border-white/15 cursor-pointer"
+                    title={isTrackingPaused ? "Tiếp tục bám theo" : "Tạm dừng bám theo"}
+                  >
+                    {isTrackingPaused ? <Play className="w-3.5 h-3.5 text-emerald-400" /> : <Pause className="w-3.5 h-3.5 text-amber-400" />}
+                    <span>{isTrackingPaused ? 'Tiếp tục' : 'Tạm dừng'}</span>
+                  </button>
+
+                  <button
+                    onClick={handleResetTracking}
+                    className="px-2.5 py-1 bg-primary/20 hover:bg-primary/30 text-primary-fixed rounded-md text-xs font-sans flex items-center gap-1 transition-colors border border-primary/30 cursor-pointer"
+                    title="Phát lại chuyển động các xe"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span>Phát lại</span>
+                  </button>
+                </div>
               </div>
             </div>
 
-            {/* Vehicle Chips Selector Toolbar */}
-            <div className="w-full mt-3 flex items-center gap-2 overflow-x-auto pb-1">
-              <span className="text-xs font-semibold text-on-surface-variant shrink-0 flex items-center gap-1">
-                <Car className="w-3.5 h-3.5 text-primary" /> Phương tiện nhận diện:
-              </span>
-              {vehicles.map((v) => (
-                <button
-                  key={v.id}
-                  onClick={() => {
-                    setActiveVehicle(v);
-                    onNotify(`Đã chọn phương tiện [${v.licensePlate || v.id}]`, v.isViolation ? 'error' : 'info');
-                  }}
-                  className={cn(
-                    "px-3 py-1 rounded-lg text-xs font-mono font-semibold flex items-center gap-1.5 transition-all cursor-pointer border shrink-0",
-                    activeVehicle?.id === v.id
-                      ? v.isViolation
-                        ? "bg-error text-on-error border-error shadow-md"
-                        : "bg-emerald-500 text-white border-emerald-400 shadow-md"
-                      : "bg-surface-container border-outline-variant/30 text-on-surface hover:bg-surface-container-high"
-                  )}
-                >
-                  <span>{v.licensePlate || v.id}</span>
-                  {v.isViolation && <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse"></span>}
-                </button>
-              ))}
+            {/* Vehicle Option Dropdown Selector Toolbar */}
+            <div className="w-full mt-3 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-surface-container-low p-2.5 rounded-xl border border-outline-variant/30">
+              <div className="flex flex-1 items-center gap-2 min-w-0">
+                <span className="text-xs font-semibold text-on-surface-variant shrink-0 flex items-center gap-1.5">
+                  <Car className="w-4 h-4 text-primary" />
+                  <span>Phương tiện nhận diện ({vehicles.length}):</span>
+                </span>
+
+                {/* Dropdown Select Option Menu */}
+                <div className="relative flex-1 min-w-[180px]">
+                  <select
+                    value={activeVehicle?.id}
+                    onChange={(e) => {
+                      const found = vehicles.find(v => v.id === e.target.value);
+                      if (found) {
+                        setActiveVehicle(found);
+                        setDrawerTab('active');
+                        onNotify(`Đã chọn phương tiện [${found.licensePlate || found.id}]`, found.isViolation ? 'error' : 'info');
+                      }
+                    }}
+                    className="w-full bg-surface border border-outline-variant/50 rounded-lg px-3 py-1.5 pr-8 text-xs font-mono font-bold text-on-surface focus:outline-none focus:border-primary appearance-none cursor-pointer shadow-sm truncate"
+                  >
+                    {filteredVehicles.map((v, idx) => {
+                      const label = v.licensePlate || (v.id.length > 12 ? `${v.type} #${idx + 1}` : v.id);
+                      const isExited = trackingPositions[v.id]?.isExited;
+                      const statusStr = isExited 
+                        ? '🏁 [ĐÃ RỜI KHUNG HÌNH]' 
+                        : v.isViolation ? `⚠️ [VI PHẠM ${v.violationType || ''}]` : '✓ Bình thường';
+                      return (
+                        <option key={v.id} value={v.id} className="bg-surface text-on-surface py-1">
+                          {label} — {v.type} ({statusStr})
+                        </option>
+                      );
+                    })}
+                  </select>
+                  <ChevronsUpDown className="w-4 h-4 absolute right-2.5 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none" />
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0 justify-between sm:justify-end">
+                {/* Search Input Filter for Multiple Vehicles */}
+                {vehicles.length > 2 && (
+                  <div className="relative w-36 sm:w-44">
+                    <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none" />
+                    <input
+                      type="text"
+                      placeholder="Tìm biển số / loại xe..."
+                      value={vehicleSearch}
+                      onChange={(e) => setVehicleSearch(e.target.value)}
+                      className="w-full bg-surface border border-outline-variant/40 rounded-lg pl-8 pr-6 py-1 text-[11px] text-on-surface focus:outline-none focus:border-primary transition-colors font-mono"
+                    />
+                    {vehicleSearch && (
+                      <button 
+                        onClick={() => setVehicleSearch('')}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-on-surface-variant hover:text-on-surface text-xs"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {/* Quick Prev / Next Stepper Controls */}
+                <div className="flex items-center gap-1 bg-surface p-1 rounded-lg border border-outline-variant/30 shrink-0">
+                  <button
+                    onClick={() => {
+                      const currentIdx = vehicles.findIndex(v => v.id === activeVehicle?.id);
+                      const prevIdx = (currentIdx - 1 + vehicles.length) % vehicles.length;
+                      setActiveVehicle(vehicles[prevIdx]);
+                      setDrawerTab('active');
+                    }}
+                    className="p-1 hover:bg-surface-container-high rounded text-on-surface transition-colors cursor-pointer"
+                    title="Phương tiện trước đó"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+                  <span className="text-[11px] font-mono font-semibold px-2 text-on-surface-variant">
+                    {vehicles.findIndex(v => v.id === activeVehicle?.id) + 1} / {vehicles.length}
+                  </span>
+                  <button
+                    onClick={() => {
+                      const currentIdx = vehicles.findIndex(v => v.id === activeVehicle?.id);
+                      const nextIdx = (currentIdx + 1) % vehicles.length;
+                      setActiveVehicle(vehicles[nextIdx]);
+                      setDrawerTab('active');
+                    }}
+                    className="p-1 hover:bg-surface-container-high rounded text-on-surface transition-colors cursor-pointer"
+                    title="Phương tiện tiếp theo"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
 
-          {/* Right Column: Direct Immediate Violation Results Window */}
+          {/* Right Column: Violation Results Drawer & Exited Vehicles History Log */}
           <div className="w-full lg:w-[420px] bg-surface-container-low border-t lg:border-t-0 lg:border-l border-outline-variant/30 flex flex-col p-6 overflow-y-auto space-y-6 shrink-0">
             
-            {/* Result Header Badge */}
-            <div className="flex items-center justify-between border-b border-outline-variant/30 pb-4">
-              <div className="flex items-center gap-2">
-                <ShieldAlert className="w-5 h-5 text-error" />
-                <h3 className="font-bold text-base text-on-surface">Kết quả Vi phạm Trực tiếp</h3>
-              </div>
-              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-primary/10 text-primary border border-primary/20">
-                REAL-TIME AI
-              </span>
+            {/* Drawer Mode Tabs */}
+            <div className="flex items-center gap-2 border-b border-outline-variant/30 pb-3">
+              <button
+                onClick={() => setDrawerTab('active')}
+                className={cn(
+                  "px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer border",
+                  drawerTab === 'active' 
+                    ? "bg-primary text-on-primary border-primary shadow-sm" 
+                    : "bg-surface-container border-outline-variant/30 text-on-surface hover:bg-surface-container-high"
+                )}
+              >
+                <ShieldAlert className="w-4 h-4" />
+                <span>Kết quả Trực tiếp</span>
+              </button>
+
+              <button
+                onClick={() => setDrawerTab('history')}
+                className={cn(
+                  "px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer border relative",
+                  drawerTab === 'history' 
+                    ? "bg-primary text-on-primary border-primary shadow-sm" 
+                    : "bg-surface-container border-outline-variant/30 text-on-surface hover:bg-surface-container-high"
+                )}
+              >
+                <History className="w-4 h-4" />
+                <span>Lịch sử đã rời đi</span>
+                {exitedHistory.length > 0 && (
+                  <span className="px-1.5 py-0.2 bg-red-500 text-white rounded-full text-[10px] font-bold animate-pulse">
+                    {exitedHistory.length}
+                  </span>
+                )}
+              </button>
             </div>
 
-            {/* License Plate Display Banner */}
-            <div className="bg-surface border-2 border-outline-variant rounded-xl p-4 flex flex-col items-center justify-center text-center shadow-inner relative overflow-hidden">
-              <div className="text-[10px] uppercase font-bold text-on-surface-variant tracking-widest mb-1">
-                Biển Kiểm Soát Phát Hiện
+            {drawerTab === 'history' ? (
+              /* Exited Vehicles History Log View */
+              <div className="space-y-4 animate-in fade-in duration-150">
+                <div className="flex justify-between items-center">
+                  <h4 className="text-sm font-bold text-on-surface flex items-center gap-1.5">
+                    <Clock className="w-4 h-4 text-primary" />
+                    Nhật ký xe đã rời khỏi video ({exitedHistory.length})
+                  </h4>
+                  <button
+                    onClick={handleResetTracking}
+                    className="text-[11px] text-primary hover:underline font-mono cursor-pointer"
+                  >
+                    Phát lại video
+                  </button>
+                </div>
+
+                {exitedHistory.length === 0 ? (
+                  <div className="p-8 text-center bg-surface-container rounded-xl border border-outline-variant/30 space-y-2">
+                    <History className="w-10 h-10 mx-auto text-outline-variant" />
+                    <div className="text-xs text-on-surface-variant font-medium">Chưa có phương tiện nào di chuyển khỏi video.</div>
+                    <div className="text-[11px] text-outline-variant">Khi các ô box bám theo xe ra khỏi viền màn hình, AI sẽ tự động ghi vết vào danh sách này.</div>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {exitedHistory.map((ex) => (
+                      <div
+                        key={ex.id}
+                        onClick={() => {
+                          setActiveVehicle(ex);
+                          setDrawerTab('active');
+                        }}
+                        className="p-3.5 bg-surface rounded-xl border border-outline-variant/40 hover:border-primary/50 transition-all cursor-pointer space-y-2 shadow-sm"
+                      >
+                        <div className="flex justify-between items-center">
+                          <span className="font-mono font-bold text-sm text-on-surface">
+                            {ex.licensePlate || ex.id}
+                          </span>
+                          <span className={cn(
+                            "px-2 py-0.5 text-[10px] font-bold rounded border",
+                            ex.isViolation ? "bg-error/20 text-error border-error/30" : "bg-emerald-500/20 text-emerald-400 border-emerald-500/30"
+                          )}>
+                            {ex.isViolation ? (ex.violationType || 'VI PHẠM') : 'BÌNH THƯỜNG'}
+                          </span>
+                        </div>
+
+                        <div className="flex justify-between items-center text-xs text-on-surface-variant font-mono">
+                          <span>Loại: {ex.type}</span>
+                          <span>{ex.speed}</span>
+                        </div>
+
+                        <div className="flex justify-between items-center text-[11px] text-outline-variant font-mono border-t border-outline-variant/20 pt-2">
+                          <span className="flex items-center gap-1 text-emerald-400">
+                            <CheckCircle2 className="w-3 h-3" /> Đã lưu lịch sử
+                          </span>
+                          <span>{ex.exitTime}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
-              <div className="bg-amber-300 text-slate-950 px-6 py-2 rounded-lg border-2 border-slate-900 font-mono text-2xl font-black tracking-widest shadow-md">
-                {activeVehicle.licensePlate || 'CHỜ TRÍCH XUẤT'}
+            ) : !activeVehicle ? (
+              <div className="p-8 text-center bg-surface-container rounded-xl border border-outline-variant/30 space-y-2 my-auto">
+                <Car className="w-10 h-10 mx-auto text-outline-variant" />
+                <div className="text-sm font-semibold text-on-surface">Chưa phát hiện phương tiện</div>
+                <div className="text-xs text-on-surface-variant">Không có đối tượng phương tiện nào được phát hiện trên luồng camera này.</div>
               </div>
-              <div className="text-xs text-on-surface-variant font-mono mt-2 flex items-center gap-1">
-                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
-                <span>Độ tin cậy OCR nhận diện: {(activeVehicle.confidence * 100).toFixed(1)}%</span>
-              </div>
-            </div>
+            ) : (
+              /* Active Target Inspection Results View */
+              <div className="space-y-6 animate-in fade-in duration-150">
+                {/* License Plate Display Banner */}
+                <div className="bg-surface border-2 border-outline-variant rounded-xl p-4 flex flex-col items-center justify-center text-center shadow-inner relative overflow-hidden">
+                  <div className="text-[10px] uppercase font-bold text-on-surface-variant tracking-widest mb-1">
+                    Biển Kiểm Soát Phát Hiện
+                  </div>
+                  <div className="bg-amber-300 text-slate-950 px-6 py-2 rounded-lg border-2 border-slate-900 font-mono text-2xl font-black tracking-widest shadow-md">
+                    {activeVehicle.licensePlate || 'CHỜ TRÍCH XUẤT'}
+                  </div>
+                  <div className="text-xs text-on-surface-variant font-mono mt-2 flex items-center gap-1">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+                    <span>Độ tin cậy OCR nhận diện: {(activeVehicle.confidence * 100).toFixed(1)}%</span>
+                  </div>
+                </div>
 
             {/* Violation Details Specs */}
             <div className="space-y-3 bg-surface-container rounded-xl p-4 border border-outline-variant/30">
@@ -1202,12 +1468,20 @@ function CameraInspectionModal({ camera, initialVehicleTarget, onClose, onNotify
                 <span>Ảnh trích xuất vi phạm:</span>
                 <span className="text-[10px] text-primary font-mono cursor-pointer hover:underline">Phóng to ảnh gốc</span>
               </div>
-              <div className="relative aspect-video rounded-xl overflow-hidden border border-outline-variant/40 bg-black">
-                <img 
-                  src={activeVehicle.snapshotUrl || camera.image} 
-                  alt="Snapshot" 
-                  className="w-full h-full object-cover" 
-                />
+              <div className="relative aspect-video rounded-xl overflow-hidden border border-outline-variant/40 bg-black flex items-center justify-center">
+                {!snapshotError && (activeVehicle.snapshotUrl || camera.image) ? (
+                  <img 
+                    src={activeVehicle.snapshotUrl || camera.image} 
+                    alt="Snapshot" 
+                    onError={() => setSnapshotError(true)}
+                    className="w-full h-full object-cover" 
+                  />
+                ) : (
+                  <div className="w-full h-full bg-surface-container flex flex-col items-center justify-center text-xs font-mono text-on-surface-variant p-4 text-center">
+                    <Car className="w-8 h-8 text-outline-variant mb-1" />
+                    <span>SNAPSHOT CROP #{activeVehicle.licensePlate || activeVehicle.id}</span>
+                  </div>
+                )}
                 <div className="absolute inset-0 border-2 border-red-500/80 m-4 pointer-events-none flex items-start p-1">
                   <span className="bg-red-600 text-white text-[9px] font-mono px-1 font-bold">SNAPSHOT CROP</span>
                 </div>
@@ -1233,8 +1507,10 @@ function CameraInspectionModal({ camera, initialVehicleTarget, onClose, onNotify
               </button>
             </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
+  </div>
+</div>
   );
 }
